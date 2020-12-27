@@ -13,13 +13,14 @@ public:
 
         String sss = request -> url();
 
+#ifdef LDEBUG
         Serial.println("setHandler");
         Serial.println(sss);
-        
+#endif        
         return sss == "/set/";
     }
 
     void handleRequest(AsyncWebServerRequest *request) {   
-
+            // Not implemented yet
     }
 };

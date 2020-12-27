@@ -5,10 +5,6 @@
 WebHelper::WebHelper(byte numberBoards, Boards &rb, const String URLToCust, const String URLToJS,  const String MyLocalIP, uint myPort) : _numberOfRelayBoards(numberBoards), 
     _relayboard(rb), _URLToCust(URLToCust), _URLToJS(URLToJS), _myPort(myPort), _MyLocalIP(MyLocalIP)
 {
-
-    Serial.println("Holla");
-    Serial.println(_URLToCust);
-    Serial.println("Waldfee");
 }
 
 void WebHelper::Lock()
@@ -107,9 +103,6 @@ void WebHelper::GetDataJSON(AsyncWebServerRequest *request)
 
 void WebHelper::MainPage(AsyncWebServerRequest *request)
 {
-    Serial.println("Holla");
-    Serial.println(_URLToCust);
-    Serial.println("Waldfee");
     AsyncResponseStream *response = request->beginResponseStream("text/html");    
     SendHTMLOKHeader(request);
     response->printf(" ");
@@ -195,4 +188,3 @@ void WebHelper::Send200JSONOK(AsyncWebServerRequest *request)
     response->print(F("{\"Status\": \"OK\"}"));
     request->send(response);
 }
-

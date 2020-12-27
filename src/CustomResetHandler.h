@@ -13,13 +13,16 @@ public:
     bool canHandle(AsyncWebServerRequest *request){
         //request->addInterestingHeader("ANY");
         String sss = request -> url();
+#ifdef LDEBUG
         Serial.println("ResetHandler");
-        
+#endif        
         return sss == "/Reset";
     }
 
     void handleRequest(AsyncWebServerRequest *request) {   
+#ifdef LDEBUG
         Serial.println("Handle reset!!");
+#endif
         _Helper->SendReset(request);
         _shouldReboot = true;
     }

@@ -13,12 +13,16 @@ public:
         //request->addInterestingHeader("ANY");
         String sss = request -> url();
 
+#ifdef LDEBUG
         Serial.println("LockHandler");        
+#endif
         return sss == "/Lock";
     }
 
     void handleRequest(AsyncWebServerRequest *request) {   
+#ifdef LDEBUG
         Serial.println("Handle lock!!");
+#endif
         _Helper->Lock();
         _Helper->SendLocked(request);
     }

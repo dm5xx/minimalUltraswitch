@@ -13,12 +13,16 @@ public:
         //request->addInterestingHeader("ANY");
         String sss = request -> url();
 
+#ifdef LDEBUG
         Serial.println("FlavHandler");        
+#endif
         return sss == "/favicon";
     }
 
     void handleRequest(AsyncWebServerRequest *request) {   
+#ifdef LDEBUG
         Serial.println("Handle flavicon!!");
+#endif
         _Helper->SendFavicon(request);      
     }
 };

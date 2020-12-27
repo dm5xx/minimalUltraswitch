@@ -9,15 +9,19 @@ public:
     {
     }
     bool canHandle(AsyncWebServerRequest *request){
-        //request->addInterestingHeader("ANY");
         String sss = request -> url();
 
+#ifdef LDEBUG
         Serial.println("GetHandler");
+#endif
         return sss == "/Get/";
     }
 
     void handleRequest(AsyncWebServerRequest *request) {   
+
+#ifdef LDEBUG
         Serial.println("Handle Get!!");
+#endif
                 
       _Helper->GetDataJSON(request);
     }

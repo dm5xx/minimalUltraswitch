@@ -10,28 +10,21 @@ public:
     {
     }
     bool canHandle(AsyncWebServerRequest *request){
-        //request->addInterestingHeader("ANY");
         String sss = request -> url();
 
+#ifdef LDEBUG
         Serial.println("DefaultHandler");
-        // Serial.println(sss);
-
-        // Serial.println("Eins");
-        // _Helper->getJs();
-        // Serial.println("Zwei");
-        // _Helper->getCu();
-        // Serial.println("Done");
+        Serial.println(sss);
+#endif
         
         return sss == "/";
     }
 
     void handleRequest(AsyncWebServerRequest *request) {   
+
+#ifdef LDEBUG
         Serial.println("Handle for Main!!");
-        // Serial.println("Eins");
-        // _Helper->getJs();
-        // Serial.println("Zwei");
-        // _Helper->getCu();
-        // Serial.println("Done");
+#endif
         _Helper->MainPage(request);       
     }
 };

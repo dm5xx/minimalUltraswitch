@@ -8,8 +8,9 @@ class Boards {
         RelayBoard * _boards;
 
     public:
-       Boards(byte numberOfBoards);
+       Boards();
         ~Boards();
+       void Init(byte numberOfBoards);
        RelayBoard * GetBoardByNumber(byte boardNumber);
        RelayBoard * GetBoards();
 };

@@ -17,16 +17,19 @@ public:
             
         String sss = request -> url();
 
+#ifdef LDEBUG
         Serial.println("Sethandler");
-
+#endif
         if(sss.startsWith("/Set"))
             return true;
         return false;
     }
 
     void handleRequest(AsyncWebServerRequest *request) {   
-        Serial.println("Handle Set");
 
+#ifdef LDEBUG
+        Serial.println("Handle Set");
+#endif
         String xx = request -> url();
         byte len = xx.length()+1;
         char buff[len];
@@ -38,8 +41,10 @@ public:
         byte bankNr = yo[1].c_str()[cmdLen-1] - '0';
         long value  = atol(yo[2].c_str());
         
+#ifdef LDEBUG
         Serial.println(bankNr);
         Serial.println(value);
+#endif
 
         _Helper->SetStatusOfBank(bankNr, value);
         _WHelper->Send200JSONOK(request);  

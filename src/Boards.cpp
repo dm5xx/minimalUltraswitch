@@ -1,7 +1,16 @@
 #include <Arduino.h>
 #include "Boards.h"
 
-Boards::Boards(byte numberOfBanks)
+Boards::Boards()
+{
+}
+
+Boards::~Boards()
+{
+    delete[] (_boards);
+}
+
+void Boards::Init(byte numberOfBanks)
 {
     _boards = new RelayBoard[numberOfBanks];
 
@@ -9,12 +18,6 @@ Boards::Boards(byte numberOfBanks)
     {
         _boards[a].Init(a);
     }
-    //Serial.println(_boards[0].GetStatus());
-}
-
-Boards::~Boards()
-{
-    delete[] (_boards);
 }
 
 RelayBoard * Boards::GetBoardByNumber(byte boardNumber)

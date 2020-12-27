@@ -22,8 +22,10 @@ void RelayBoard::Init(byte boardnumber)
 
 unsigned int RelayBoard::GetStatus() {
 
-    // Serial.print("Status: ");
-    // Serial.print(_status);  // just for test  
+#ifdef LDEBUG
+    Serial.print("Status: ");
+    Serial.print(_status);  // just for test  
+#endif
 
     return _status;
 }
@@ -31,26 +33,34 @@ unsigned int RelayBoard::GetStatus() {
 void RelayBoard::SetStatus(unsigned int value)
 {
 
-    // Serial.println("Status befor: ");
-    // Serial.print(_status);
+#ifdef LDEBUG
+    Serial.println("Status befor: ");
+    Serial.print(_status);
+#endif
 
     _status = value;
 
-    // Serial.println("Status after: ");
-    // Serial.print(_status);
+#ifdef LDEBUG
+    Serial.println("Status after: ");
+    Serial.print(_status);
+#endif
 
     GetOrderedArraybyValue(_status, _pinStatus);
 
     for(byte a = 0; a < 16; a++)
     {
-        // Serial.print("PS: ");
-        // Serial.print(_pinStatus[a]);
-        // Serial.print(" of pin number ");
-        // Serial.println(_RelayPins[a]);
+#ifdef LDEBUG
+        Serial.print("PS: ");
+        Serial.print(_pinStatus[a]);
+        Serial.print(" of pin number ");
+        Serial.println(_RelayPins[a]);
 
-        // Serial.print(" Before mcp write");
+        Serial.print(" Before mcp write");
+#endif
          _mcp.digitalWrite(_RelayPins[a], !_pinStatus[a]);
-        // Serial.print(" After");
+#ifdef LDEBUG
+        Serial.print(" After");
+#endif
     }
 }
 

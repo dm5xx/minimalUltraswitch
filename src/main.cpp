@@ -27,13 +27,19 @@
   1.4.0   K Hoang      18/12/2020 Fix staticIP not saved. Add functions. Add complex examples.
   1.4.1   K Hoang      21/12/2020 Fix bug and compiler warnings.
  *****************************************************************************************************************************/
- 
+
+//#define LDEBUG
+
 #if !( defined(ESP8266) ||  defined(ESP32) )
 #error This code is intended to run on the ESP8266 or ESP32 platform! Please check your Tools->Board setting.
 #endif
 
+#ifdef LDEBUG
 // Use from 0 to 4. Higher number, more debugging messages and memory usage.
-#define _ESPASYNC_WIFIMGR_LOGLEVEL_       3
+    #define _ESPASYNC_WIFIMGR_LOGLEVEL_       3
+#else
+    #define _ESPASYNC_WIFIMGR_LOGLEVEL_       0
+#endif
 
 // Default is 30s, using 20s now
 #define TIME_BETWEEN_MODAL_SCANS          20000UL
@@ -384,6 +390,12 @@ uint8_t connectMultiWiFi()
     LOGERROR1(F("WiFi connected after time: "), i);
     LOGERROR3(F("SSID:"), WiFi.SSID(), F(",RSSI="), WiFi.RSSI());
     LOGERROR3(F("Channel:"), WiFi.channel(), F(",IP address:"), WiFi.localIP() );
+
+#ifdef LDEBUG
+    Serial.println(F("Corrected url while reconecting.."));
+    WiFi.localIP().toString().toCharArray(switch_url, 40);
+    delay(20);
+#endif
   }
   else
     LOGERROR(F("WiFi not connected"));
@@ -394,7 +406,9 @@ uint8_t connectMultiWiFi()
 //callback notifying us of the need to save config
 void saveConfigCallback ()
 {
-  Serial.println("Should save config");
+#ifdef LDEBUG
+  Serial.println(F("Should save config"));
+#endif
   shouldSaveConfig = true;
 }
 
@@ -402,19 +416,25 @@ void heartBeatPrint()
 {
   static int num = 1;
 
+#ifdef LDEBUG
   if (WiFi.status() == WL_CONNECTED)
     Serial.print(F("H"));        // H means connected to WiFi
   else
     Serial.print(F("F"));        // F means not connected to WiFi
+#endif
 
   if (num == 80)
   {
+#ifdef LDEBUG
     Serial.println();
+#endif
     num = 1;
   }
   else if (num++ % 10 == 0)
   {
+#ifdef LDEBUG
     Serial.print(F(" "));
+#endif
   }
 }
 
@@ -428,12 +448,16 @@ void check_WiFi()
 {
   if ( (WiFi.status() != WL_CONNECTED) )
   {
+#ifdef LDEBUG
     Serial.println(F("\nWiFi lost. Call connectMultiWiFi in loop"));
+#endif
     connectMultiWiFi();
   }
 }  
 
 bool shouldReboot = false;
+bool shouldSettingsReset = false;
+
 
 void check_status()
 {
@@ -462,9 +486,25 @@ void check_status()
     toggleLED();
     LEDstatus_timeout = currentMillis + LED_INTERVAL;
 
-    if(shouldReboot)
+    if(shouldReboot || shouldSettingsReset)
     {
-        Serial.println("i should reboot");
+        if(shouldSettingsReset)
+        {
+            
+            ESPAsync_WiFiManager ESPAsync_wifiManager(&webServer, &dnsServer, "ConfigOnSwitch");
+#ifdef LDEBUG
+            Serial.println(F("ESP rest!"));
+#endif
+            ESPAsync_wifiManager.resetSettings();
+            WiFi.disconnect();
+            delay(1000);
+#ifdef LDEBUG
+            Serial.println(F("ESP restarting..."));
+#endif
+        }
+#ifdef LDEBUG
+        Serial.println(F("I do reset.."));
+#endif
         ESP.reset();
     }
   }
@@ -532,16 +572,6 @@ void saveConfigData()
 }
 
 //******************************************************************************************* Custom stuff ********************************************************************************
-
-//byte numberOfRelayBoards = 1;
-//bool isLocked = false;
-
-//String SwitchURL = "255.255.255.255";
-//String MyLocalIP = "192.168.97.217"; 
-//String ClientIP = "255.255.255.255"; 
-
-//String URLToJS = "h.mmmedia-online.de/minimal63/";
-//String URLToCu = "h.mmmedia-online.de/minimal63XX/";
     
 #include "RelayBoard.h"
 #include "Boards.h"
@@ -550,7 +580,7 @@ void saveConfigData()
 #include "webhelper.h"
 #include <memory>
 
-Boards relayArray(1);
+Boards relayArray = Boards();
 
 #include "CustomSetHandler.h"
 #include "CustomGetHandler.h"
@@ -560,6 +590,7 @@ Boards relayArray(1);
 #include "CustomUnlockHandler.h"
 #include "CustomFaviHandler.h"
 #include "CustomResetHandler.h"
+#include "CustomSettingsResetHandler.h"
 
 
 //*****************************************************************************************************************************************************************************************
@@ -568,14 +599,17 @@ void setup()
   //set led pin as output
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LED_ON);
-  
+  pinMode(D0, INPUT_PULLUP);
+
   // Put your setup code here, to run once
   Serial.begin(115200);
   while (!Serial);
 
+#ifdef LDEBUG
   Serial.print("\nStarting Async_AutoConnectWithFSParametersAndCustomIP using " + String(FS_Name));
   Serial.println(" on " + String(ARDUINO_BOARD));
   Serial.println(ESP_ASYNC_WIFIMANAGER_VERSION);
+#endif
 
   //clean FS, for testing
   //FileFS.format();
@@ -583,31 +617,39 @@ void setup()
   // Mount the filesystem
   bool result = FileFS.begin();
 
-#if USE_LITTLEFS
-  Serial.print("\nLittleFS opened: ");
-#else
-  Serial.print("\nSPIFFS opened: ");
-#endif
+#ifdef LDEBUG
+    #if USE_LITTLEFS
+    Serial.print(F("\nLittleFS opened: "));
+    #else
+    Serial.print("\nSPIFFS opened: ");
+    #endif
 
-  Serial.println(result ? "OK" : "Failed");
+      Serial.println(result ? "OK" : "Failed");
 
   //read configuration from FS json
-  Serial.println("Mounting FS...");
+    Serial.println(F("Mounting FS..."));
+#endif
 
   if (result) 
   {
-    Serial.println("Mounted file system");
+#ifdef LDEBUG
+    Serial.println(F("Mounted file system"));
+#endif
     
     if (FileFS.exists(CONFIG_FILE)) 
     {
       //file exists, reading and loading
-      Serial.println("Reading config file");
+#ifdef LDEBUG
+      Serial.println(F("Reading config file"));
+#endif
       
       File configFile = FileFS.open(CONFIG_FILE, "r");
       
       if (configFile) 
       {
-        Serial.println("Opened config file");
+#ifdef LDEBUG
+        Serial.println(F("Opened config file"));
+#endif
         
         size_t size = configFile.size();
         
@@ -636,7 +678,9 @@ void setup()
         if (json.success()) 
 #endif        
         {
-          Serial.println("\nParsed json");
+#ifdef LDEBUG
+          Serial.println(F("\nParsed json"));
+#endif
 
           strcpy(switch_url, json["switch_url"]);
           strcpy(custom_js, json["custom_js"]);
@@ -645,21 +689,27 @@ void setup()
         }  
         else 
         {
-          Serial.println("Failed to load json config");
+#ifdef LDEBUG
+          Serial.println(F("Failed to load json config"));
+#endif
         }
       }
     }
   } 
   else 
   {
-    Serial.println("Failed to mount FS");
+#ifdef LDEBUG
+    Serial.println(F("Failed to mount FS"));
+#endif
   }
   
   //end read
+#ifdef LDEBUG
   Serial.println(String("Switch_url = ") + switch_url);
   Serial.println(String("NumberOfBoards   = ") + numberOfBoards);
   Serial.println(String("Custom_js = ") + custom_js);
   Serial.println(String("Custom_cu = ") + custom_cu);
+#endif
   
   // The extra parameters to be configured (can be either global or just in the setup)
   // After connecting, parameter.getValue() will get you the configured value
@@ -733,16 +783,22 @@ void setup()
   Router_Pass = ESPAsync_wifiManager.WiFi_Pass();
 
   //Remove this line if you do not want to see WiFi password printed
+#ifdef LDEBUG
   Serial.println("\nStored: SSID = " + Router_SSID + ", Pass = " + Router_Pass);
+#endif
 
   if (Router_SSID != "")
   {
     ESPAsync_wifiManager.setConfigPortalTimeout(120); //If no access point name has been previously entered disable timeout.
-    Serial.println("Got stored Credentials. Timeout 120s");
+#ifdef LDEBUG
+    Serial.println(F("Got stored Credentials. Timeout 120s"));
+#endif
   }
   else
   {
-    Serial.println("No stored Credentials. No timeout");
+#ifdef LDEBUG
+    Serial.println(F("No stored Credentials. No timeout"));
+#endif
   }
 
   String chipID = String(ESP_getChipId(), HEX);
@@ -755,16 +811,24 @@ void setup()
   // From v1.1.0, Don't permit NULL password
   if ( (Router_SSID == "") || (Router_Pass == "") )
   {
-    Serial.println("We haven't got any access point credentials, so get them now");
+#ifdef LDEBUG
+    Serial.println(F("We haven't got any access point credentials, so get them now"));
+#endif
 
     initialConfig = true;
 
     // Starts an access point
     //if (!ESPAsync_wifiManager.startConfigPortal((const char *) ssid.c_str(), password))
-    if ( !ESPAsync_wifiManager.startConfigPortal(AP_SSID.c_str(), AP_PASS.c_str()) )
-      Serial.println("Not connected to WiFi but continuing anyway.");
-    else
-      Serial.println("WiFi connected...yeey :)");
+    if ( !ESPAsync_wifiManager.startConfigPortal(AP_SSID.c_str(), AP_PASS.c_str()) ) {
+#ifdef LDEBUG
+      Serial.println(F("Not connected to WiFi but continuing anyway."));
+#endif
+    }
+    else {
+#ifdef LDEBUG
+      Serial.println(F("WiFi connected...yeey :)"));
+#endif
+    }
 
     // Stored  for later usage, from v1.1.0, but clear first
     memset(&WM_config, 0, sizeof(WM_config));
@@ -823,23 +887,33 @@ void setup()
 
     if ( WiFi.status() != WL_CONNECTED ) 
     {
-      Serial.println("ConnectMultiWiFi in setup");
-     
+#ifdef LDEBUG
+      Serial.println(F("ConnectMultiWiFi in setup"));
+#endif
       connectMultiWiFi();
     }
   }
 
-  Serial.print("After waiting ");
+#ifdef LDEBUG
+  Serial.print(F("After waiting "));
   Serial.print((float) (millis() - startedAt) / 1000L);
-  Serial.print(" secs more in setup(), connection result is ");
+  Serial.print(F(" secs more in setup(), connection result is "));
+#endif
 
   if (WiFi.status() == WL_CONNECTED)
   {
-    Serial.print("connected. Local IP: ");
+#ifdef LDEBUG
+    Serial.print(F("connected. Local IP: "));
     Serial.println(WiFi.localIP());
+#endif
   }
   else
-    Serial.println(ESPAsync_wifiManager.getStatus(WiFi.status()));
+  {
+    auto r = ESPAsync_wifiManager.getStatus(WiFi.status());
+#ifdef LDEBUG
+    Serial.println(r);
+#endif
+  }
 
   //read updated parameters
   strcpy(switch_url, custom_switch_url.getValue());
@@ -850,7 +924,9 @@ void setup()
   //save the custom parameters to FS
   if (shouldSaveConfig) 
   {
-    Serial.println("Saving config");
+#ifdef LDEBUG
+    Serial.println(F("Saving config"));
+#endif
 
 #if (ARDUINOJSON_VERSION_MAJOR >= 6)
     DynamicJsonDocument json(1024);
@@ -859,10 +935,11 @@ void setup()
     JsonObject& json = jsonBuffer.createObject();
 #endif
     
-
     if(switch_url[0] == '0')
     {
-        Serial.println("Corrected url");
+#ifdef LDEBUG
+        Serial.println(F("Corrected url while reconecting.."));
+#endif
         WiFi.localIP().toString().toCharArray(switch_url, 40);
         delay(20);
     }
@@ -876,7 +953,9 @@ void setup()
     
     if (!configFile) 
     {
-      Serial.println("Failed to open config file for writing");
+#ifdef LDEBUG
+      Serial.println(F("Failed to open config file for writing"));
+#endif
     }
 
 #if (ARDUINOJSON_VERSION_MAJOR >= 6)
@@ -893,17 +972,62 @@ void setup()
     //end save
   }
 
-  Serial.print("Local IP = ");
+#ifdef LDEBUG
+  Serial.print(F("Local IP = "));
   Serial.println(WiFi.localIP());
-  Serial.print("GateWay IP = ");
+  Serial.print(F("GateWay IP = "));
   Serial.println(WiFi.gatewayIP());
-  Serial.print("SubnetMask = "); 
+  Serial.print(F("SubnetMask = ")); 
   Serial.println(WiFi.subnetMask());
+
+  if (WiFi.status() != WL_CONNECTED)
+  {
+    Serial.print(F("NOT CONNECTED  NOT CONNECT"));
+  }
+  else
+  {
+    Serial.print(F("I AM CONNECTED"));
+  }
+#endif
+  
+
 
   //keep LED off
   digitalWrite(LED_BUILTIN, LED_OFF);
 
+byte counter = 0;
+
+while(counter < 5)
+{
+    byte buttonVal = digitalRead(D0);
+    
+    if (buttonVal == LOW) {
+          
+#ifdef LDEBUG
+          Serial.println(F("ESP rest!"));
+#endif
+          ESPAsync_wifiManager.resetSettings();
+          WiFi.disconnect();
+          delay(1000);
+#ifdef LDEBUG
+          Serial.println(F("ESP restarting..."));
+#endif
+          delay(1000);
+          ESP.restart();
+    }
+    else
+    {
+#ifdef LDEBUG
+      Serial.println(F("NotPushed!"));
+#endif
+    }
+    
+    delay(200);
+    counter++;
+}
+
 byte numberOfRelayBoards = String(numberOfBoards).toInt();
+relayArray.Init(numberOfRelayBoards);
 
 auto helper = std::make_shared<Helper>(numberOfRelayBoards, relayArray);
 auto webhelper = std::make_shared<WebHelper>(numberOfRelayBoards, relayArray, String(custom_cu), String(custom_js),  String(switch_url), myPort);
@@ -915,9 +1039,12 @@ webServer.addHandler(new CustomGetHandler(webhelper));
 webServer.addHandler(new CustomLockHandler(webhelper));
 webServer.addHandler(new CustomUnlockHandler(webhelper));
 webServer.addHandler(new CustomResetHandler(webhelper, &shouldReboot));
+webServer.addHandler(new CustomSettingsResetHandler(webhelper, &shouldSettingsReset));
 webServer.addHandler(new CustomFaviHandler(webhelper));
 
-Serial.println("Starting");
+#ifdef LDEBUG
+    Serial.println(F("Starting"));
+#endif
 webServer.begin();
 
 }
