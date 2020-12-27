@@ -1,6 +1,7 @@
 #pragma once
 #include "RelayBoard.h"
 #include "Boards.h"
+#include <ArduinoJson.h>
 
 class AsyncWebServerRequest; // nur wegen header vorwärtsdeklaration
 class WebHelper {
@@ -11,8 +12,10 @@ class WebHelper {
     const String _MyLocalIP;
     uint _myPort;
     bool _isLocked = false;
+    DynamicJsonDocument& _status;
+
 public:
-    WebHelper(byte numberBoards, Boards &rb, const String URLToCust, const String URLToJS,  const String MyLocalIP, uint myPort);
+    WebHelper(byte numberBoards, Boards &rb, const String URLToCust, const String URLToJS,  const String MyLocalIP, uint myPort, DynamicJsonDocument* status);
 
     void SendJSONOKHeader(AsyncWebServerRequest *request);
 
@@ -31,6 +34,8 @@ public:
     void GetDataJSON(AsyncWebServerRequest *request);
 
     void MainPage(AsyncWebServerRequest *request);
+    
+    void SendESPStatus(AsyncWebServerRequest *request);
 
     void Lock();
 

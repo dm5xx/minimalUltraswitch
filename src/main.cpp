@@ -458,6 +458,8 @@ void check_WiFi()
 bool shouldReboot = false;
 bool shouldSettingsReset = false;
 
+DynamicJsonDocument espstatus(1024);
+
 
 void check_status()
 {
@@ -485,6 +487,11 @@ void check_status()
     // Toggle LED at LED_INTERVAL = 2s
     toggleLED();
     LEDstatus_timeout = currentMillis + LED_INTERVAL;
+
+    espstatus["Heap"] = ESP.getFreeHeap();
+    espstatus["Frag"] = ESP.getHeapFragmentation();
+    espstatus["FBSize"] = ESP.getMaxFreeBlockSize();
+    espstatus["CPU"] = ESP.getCpuFreqMHz();
 
     if(shouldReboot || shouldSettingsReset)
     {
@@ -591,7 +598,7 @@ Boards relayArray = Boards();
 #include "CustomFaviHandler.h"
 #include "CustomResetHandler.h"
 #include "CustomSettingsResetHandler.h"
-
+#include "CustomStatusHandler.h"
 
 //*****************************************************************************************************************************************************************************************
 void setup()
@@ -1030,7 +1037,7 @@ byte numberOfRelayBoards = String(numberOfBoards).toInt();
 relayArray.Init(numberOfRelayBoards);
 
 auto helper = std::make_shared<Helper>(numberOfRelayBoards, relayArray);
-auto webhelper = std::make_shared<WebHelper>(numberOfRelayBoards, relayArray, String(custom_cu), String(custom_js),  String(switch_url), myPort);
+auto webhelper = std::make_shared<WebHelper>(numberOfRelayBoards, relayArray, String(custom_cu), String(custom_js),  String(switch_url), myPort, &espstatus);
 
 webServer.addHandler(new CustomDefaultHandler(webhelper));
 webServer.addHandler(new CustomSetHandler(webhelper, helper));
@@ -1041,6 +1048,7 @@ webServer.addHandler(new CustomUnlockHandler(webhelper));
 webServer.addHandler(new CustomResetHandler(webhelper, &shouldReboot));
 webServer.addHandler(new CustomSettingsResetHandler(webhelper, &shouldSettingsReset));
 webServer.addHandler(new CustomFaviHandler(webhelper));
+webServer.addHandler(new CustomStatusHandler(webhelper));
 
 #ifdef LDEBUG
     Serial.println(F("Starting"));

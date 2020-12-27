@@ -1,9 +1,10 @@
 #include <Arduino.h>
+#include <ArduinoJson.h>
 #include <ESPAsyncWebServer.h>
 #include "webhelper.h"
 
-WebHelper::WebHelper(byte numberBoards, Boards &rb, const String URLToCust, const String URLToJS,  const String MyLocalIP, uint myPort) : _numberOfRelayBoards(numberBoards), 
-    _relayboard(rb), _URLToCust(URLToCust), _URLToJS(URLToJS), _myPort(myPort), _MyLocalIP(MyLocalIP)
+WebHelper::WebHelper(byte numberBoards, Boards &rb, const String URLToCust, const String URLToJS,  const String MyLocalIP, uint myPort, DynamicJsonDocument * status) : _numberOfRelayBoards(numberBoards), 
+    _relayboard(rb), _URLToCust(URLToCust), _URLToJS(URLToJS), _myPort(myPort), _MyLocalIP(MyLocalIP), _status(*status)
 {
 }
 
@@ -186,5 +187,16 @@ void WebHelper::Send200JSONOK(AsyncWebServerRequest *request)
     AsyncResponseStream *response = request->beginResponseStream("application/json");    
     SendJSONOKHeader(request);
     response->print(F("{\"Status\": \"OK\"}"));
+    request->send(response);
+}
+
+void WebHelper::SendESPStatus(AsyncWebServerRequest *request)
+{
+    String s;
+    serializeJson(_status, s);
+
+    AsyncResponseStream *response = request->beginResponseStream("application/json");    
+    SendJSONOKHeader(request);
+    response->print(s);
     request->send(response);
 }
