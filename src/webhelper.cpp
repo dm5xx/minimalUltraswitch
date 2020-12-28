@@ -168,8 +168,9 @@ void WebHelper::MainPage(AsyncWebServerRequest *request)
     response->print(_MyLocalIP);
     response->printf(":");
     response->print(_myPort);
-    response->printf("';\r");
-    response->printf("</script>\n");
+    response->printf("';\rvar numberOfBoards = ");
+    response->print(_numberOfRelayBoards);
+    response->printf(";\r</script>\n");
     response->printf("<TITLE>\n");
     response->printf("minimalUltraswitch - Remote Switch by DM5XX\n");
     response->printf("</TITLE>\n");

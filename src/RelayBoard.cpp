@@ -2,12 +2,20 @@
 #include <Arduino.h>
 #include "RelayBoard.h"
 
+//#define LDEBUG
+
 RelayBoard::RelayBoard() : _status(0), _pinStatus{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}, _RelayPins{ 0,8,1,9,2,10,3,11,4,12,5,13,6,14,7,15 }
 {
 }
 
+
 void RelayBoard::Init(byte boardnumber)
 {
+#ifdef LDEBUG
+    Serial.print("Init boardnumber: ");
+    Serial.println(boardnumber);  // just for test  
+#endif
+
     _boardNumber = boardnumber;    
     _mcp.begin(_boardNumber);
      
@@ -25,6 +33,8 @@ unsigned int RelayBoard::GetStatus() {
 #ifdef LDEBUG
     Serial.print("Status: ");
     Serial.print(_status);  // just for test  
+    Serial.print("OnBoard: ");
+    Serial.println(_boardNumber);  // just for test  
 #endif
 
     return _status;
@@ -34,15 +44,17 @@ void RelayBoard::SetStatus(unsigned int value)
 {
 
 #ifdef LDEBUG
-    Serial.println("Status befor: ");
-    Serial.print(_status);
+    Serial.print("OnBoard: ");
+    Serial.println(_boardNumber);  // just for test  
+    Serial.print("Status befor: ");
+    Serial.println(_status);
 #endif
 
     _status = value;
 
 #ifdef LDEBUG
-    Serial.println("Status after: ");
-    Serial.print(_status);
+    Serial.print("Status after: ");
+    Serial.println(_status);
 #endif
 
     GetOrderedArraybyValue(_status, _pinStatus);
@@ -54,12 +66,10 @@ void RelayBoard::SetStatus(unsigned int value)
         Serial.print(_pinStatus[a]);
         Serial.print(" of pin number ");
         Serial.println(_RelayPins[a]);
-
-        Serial.print(" Before mcp write");
 #endif
          _mcp.digitalWrite(_RelayPins[a], !_pinStatus[a]);
 #ifdef LDEBUG
-        Serial.print(" After");
+        Serial.print(" Mcp write done");
 #endif
     }
 }
