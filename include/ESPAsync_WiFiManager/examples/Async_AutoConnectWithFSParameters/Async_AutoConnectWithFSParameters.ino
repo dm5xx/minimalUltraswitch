@@ -1,5 +1,5 @@
 /****************************************************************************************************************************
-  Async_AutoConnectWithFSParametersAndCustomIPr.ino
+  Async_AutoConnectWithFSParameters.ino
   For ESP8266 / ESP32 boards
 
   ESPAsync_WiFiManager is a library for the ESP8266/Arduino platform, using (ESP)AsyncWebServer to enable easy
@@ -13,44 +13,36 @@
 
   Built by Khoi Hoang https://github.com/khoih-prog/ESPAsync_WiFiManager
   Licensed under MIT license
-  Version: 1.4.1
+  Version: 1.6.0
 
   Version Modified By  Date      Comments
   ------- -----------  ---------- -----------
   1.0.11  K Hoang      21/08/2020 Initial coding to use (ESP)AsyncWebServer instead of (ESP8266)WebServer. Bump up to v1.0.11
                                   to sync with ESP_WiFiManager v1.0.11
-  1.1.1   K Hoang      29/08/2020 Add MultiWiFi feature to autoconnect to best WiFi at runtime to sync with 
+  1.1.1   K Hoang      29/08/2020 Add MultiWiFi feature to autoconnect to best WiFi at runtime to sync with
                                   ESP_WiFiManager v1.1.1. Add setCORSHeader function to allow flexible CORS
   1.1.2   K Hoang      17/09/2020 Fix bug in examples.
   1.2.0   K Hoang      15/10/2020 Restore cpp code besides Impl.h code to use if linker error. Fix bug.
   1.3.0   K Hoang      04/12/2020 Add LittleFS support to ESP32 using LITTLEFS Library
   1.4.0   K Hoang      18/12/2020 Fix staticIP not saved. Add functions. Add complex examples.
   1.4.1   K Hoang      21/12/2020 Fix bug and compiler warnings.
+  1.4.2   K Hoang      21/12/2020 Fix examples' bug not using saved WiFi Credentials after losing all WiFi connections.
+  1.4.3   K Hoang      23/12/2020 Fix examples' bug not saving Static IP in certain cases.
+  1.5.0   K Hoang      13/02/2021 Add support to new ESP32-S2. Optimize code.
+  1.6.0   K Hoang      25/02/2021 Fix WiFi Scanning bug.
  *****************************************************************************************************************************/
 
-#define LDEBUG
-//#define WITHRESET
-
 #if !( defined(ESP8266) ||  defined(ESP32) )
-#error This code is intended to run on the ESP8266 or ESP32 platform! Please check your Tools->Board setting.
+  #error This code is intended to run on the ESP8266 or ESP32 platform! Please check your Tools->Board setting.
 #endif
 
-#ifdef LDEBUG
+#define ESP_ASYNC_WIFIMANAGER_VERSION_MIN_TARGET     "ESPAsync_WiFiManager v1.6.0"
+
 // Use from 0 to 4. Higher number, more debugging messages and memory usage.
-    #define _ESPASYNC_WIFIMGR_LOGLEVEL_       3
-#else
-    #define _ESPASYNC_WIFIMGR_LOGLEVEL_       0
-#endif
+#define _ESPASYNC_WIFIMGR_LOGLEVEL_    3
 
-// Default is 30s, using 20s now
-#define TIME_BETWEEN_MODAL_SCANS          20000UL
-
-// Default is 60s, using 30s now
-#define TIME_BETWEEN_MODELESS_SCANS       30000UL
-
-#include <FS.h>                   //this needs to be first, or it all crashes and burns...
-
-//For ESP32, To use ESP32 Dev Module, QIO, Flash 4MB/80MHz, Upload 921600
+#include <FS.h>
+  
 //Ported to ESP32
 #ifdef ESP32
   #include <esp_wifi.h>
@@ -126,10 +118,13 @@
   #define LED_OFF     HIGH
 #endif
 
-// For Config Portal
-// SSID and PW for Config Portal
-String ssid           = "ESP_" + String(ESP_getChipId(), HEX);
-const char* password  = "your_password";
+// Pin D2 mapped to pin GPIO2/ADC12 of ESP32, or GPIO2/TXD1 of NodeMCU control on-board LED
+#define PIN_LED       LED_BUILTIN
+
+// Now support ArduinoJson 6.0.0+ ( tested with v6.14.1 )
+#include <ArduinoJson.h>          //https://github.com/bblanchon/ArduinoJson
+
+char configFileName[] = "/config.json";
 
 // SSID and PW for your Router
 String Router_SSID;
@@ -179,8 +174,8 @@ String AP_PASS;
 
 // Use false if you don't like to display Available Pages in Information Page of Config Portal
 // Comment out or use true to display Available Pages in Information Page of Config Portal
-// Must be placed before #include <ESPAsync_WiFiManager.h>
-#define USE_AVAILABLE_PAGES     false
+// Must be placed before #include <ESP_WiFiManager.h>
+#define USE_AVAILABLE_PAGES     true
 
 // From v1.0.10 to permit disable/enable StaticIP configuration in Config Portal from sketch. Valid only if DHCP is used.
 // You'll loose the feature of dynamically changing from DHCP to static IP, or vice versa
@@ -202,33 +197,34 @@ String AP_PASS;
 // Use USE_DHCP_IP == true for dynamic DHCP IP, false to use static IP which you have to change accordingly to your network
 #if (defined(USE_STATIC_IP_CONFIG_IN_CP) && !USE_STATIC_IP_CONFIG_IN_CP)
 // Force DHCP to be true
-#if defined(USE_DHCP_IP)
-#undef USE_DHCP_IP
-#endif
-#define USE_DHCP_IP     true
+  #if defined(USE_DHCP_IP)
+    #undef USE_DHCP_IP
+  #endif
+  #define USE_DHCP_IP     true
 #else
-// You can select DHCP or Static IP here
-#define USE_DHCP_IP     true
-//#define USE_DHCP_IP     false
-#endif
-
-#if ( USE_DHCP_IP || ( defined(USE_STATIC_IP_CONFIG_IN_CP) && !USE_STATIC_IP_CONFIG_IN_CP ) )
-// Use DHCP
-#warning Using DHCP IP
-IPAddress stationIP   = IPAddress(0, 0, 0, 0);
-IPAddress gatewayIP   = IPAddress(192, 168, 2, 1);
-IPAddress netMask     = IPAddress(255, 255, 255, 0);
-#else
-// Use static IP
-#warning Using static IP
-#ifdef ESP32
-IPAddress stationIP   = IPAddress(192, 168, 2, 232);
-#else
-IPAddress stationIP   = IPAddress(192, 168, 2, 186);
+  // You can select DHCP or Static IP here
+  //#define USE_DHCP_IP     true
+  #define USE_DHCP_IP     false
 #endif
 
-IPAddress gatewayIP   = IPAddress(192, 168, 2, 1);
-IPAddress netMask     = IPAddress(255, 255, 255, 0);
+#if ( USE_DHCP_IP )
+  // Use DHCP
+  #warning Using DHCP IP
+  IPAddress stationIP   = IPAddress(0, 0, 0, 0);
+  IPAddress gatewayIP   = IPAddress(192, 168, 2, 1);
+  IPAddress netMask     = IPAddress(255, 255, 255, 0);
+#else
+  // Use static IP
+  #warning Using static IP
+  
+  #ifdef ESP32
+    IPAddress stationIP   = IPAddress(192, 168, 2, 232);
+  #else
+    IPAddress stationIP   = IPAddress(192, 168, 2, 186);
+  #endif
+  
+  IPAddress gatewayIP   = IPAddress(192, 168, 2, 1);
+  IPAddress netMask     = IPAddress(255, 255, 255, 0);
 #endif
 
 #define USE_CONFIGURABLE_DNS      true
@@ -236,34 +232,28 @@ IPAddress netMask     = IPAddress(255, 255, 255, 0);
 IPAddress dns1IP      = gatewayIP;
 IPAddress dns2IP      = IPAddress(8, 8, 8, 8);
 
-IPAddress APStaticIP  = IPAddress(192, 168, 100, 39);
-IPAddress APStaticGW  = IPAddress(192, 168, 100, 39);
+IPAddress APStaticIP  = IPAddress(192, 168, 100, 1);
+IPAddress APStaticGW  = IPAddress(192, 168, 100, 1);
 IPAddress APStaticSN  = IPAddress(255, 255, 255, 0);
 
 #include <ESPAsync_WiFiManager.h>              //https://github.com/khoih-prog/ESPAsync_WiFiManager
 
-//#define HTTP_PORT           59
+#define HTTP_PORT           80
 
-uint myPort = 59;
+//define your default values here, if there are different values in configFileName (config.json), they are overwritten.
+#define BLYNK_SERVER_LEN                64
+#define BLYNK_TOKEN_LEN                 32
+#define BLYNK_SERVER_PORT_LEN           6
 
-AsyncWebServer webServer(myPort);
-DNSServer dnsServer;
+#define MQTT_SERVER_MAX_LEN             40
+#define MQTT_SERVER_PORT_LEN            6
 
-// Now support ArduinoJson 6.0.0+ ( tested with v6.15.2 to v6.16.1 )
-#include <ArduinoJson.h>        // get it from https://arduinojson.org/ or install via Arduino library manager
+char blynk_server [BLYNK_SERVER_LEN]        = "account.duckdns.org";
+char blynk_port   [BLYNK_SERVER_PORT_LEN]   = "8080";
+char blynk_token  [BLYNK_TOKEN_LEN]         = "YOUR_BLYNK_TOKEN";
 
-const char* CONFIG_FILE = "/config.json";
-
-//define your default values here, if there are different values in config.json, they are overwritten.
-//length should be max size + 1
-
-char switch_url  [40]  = "0";
-char custom_js  [40]  = "h.mmmedia-online.de/minimal63/";
-char custom_cu  [40]  = "h.mmmedia-online.de/minimal63XX/";
-char numberOfBoards    [2]   = "1";
-
-//flag for saving data
-bool shouldSaveConfig = false;
+char mqtt_server  [MQTT_SERVER_MAX_LEN];
+char mqtt_port    [MQTT_SERVER_PORT_LEN]    = "8080";
 
 ///////////////////////////////////////////
 // New in v1.4.0
@@ -335,14 +325,19 @@ void configWiFi(WiFi_STA_IPConfig in_WM_STA_IPconfig)
 uint8_t connectMultiWiFi()
 {
 #if ESP32
-  // For ESP32, this better be 0 to shorten the connect time
-  #define WIFI_MULTI_1ST_CONNECT_WAITING_MS       0
+  // For ESP32, this better be 0 to shorten the connect time. 
+  // For ESP32-S2, must be > 500
+  #if ( ARDUINO_ESP32S2_DEV || ARDUINO_FEATHERS2 || ARDUINO_PROS2 || ARDUINO_MICROS2 )
+    #define WIFI_MULTI_1ST_CONNECT_WAITING_MS           500L
+  #else
+    #define WIFI_MULTI_1ST_CONNECT_WAITING_MS           0L
+  #endif
 #else
   // For ESP8266, this better be 2200 to enable connect the 1st time
-  #define WIFI_MULTI_1ST_CONNECT_WAITING_MS       2200L
+  #define WIFI_MULTI_1ST_CONNECT_WAITING_MS             2200L
 #endif
 
-#define WIFI_MULTI_CONNECT_WAITING_MS           100L
+#define WIFI_MULTI_CONNECT_WAITING_MS                   100L
   
   uint8_t status;
 
@@ -391,12 +386,6 @@ uint8_t connectMultiWiFi()
     LOGERROR1(F("WiFi connected after time: "), i);
     LOGERROR3(F("SSID:"), WiFi.SSID(), F(",RSSI="), WiFi.RSSI());
     LOGERROR3(F("Channel:"), WiFi.channel(), F(",IP address:"), WiFi.localIP() );
-
-#ifdef LDEBUG
-    Serial.println(F("Corrected url while reconecting.."));
-    WiFi.localIP().toString().toCharArray(switch_url, 40);
-    delay(20);
-#endif
   }
   else
     LOGERROR(F("WiFi not connected"));
@@ -404,128 +393,241 @@ uint8_t connectMultiWiFi()
   return status;
 }
 
+//flag for saving data
+bool shouldSaveConfig = false;
+
 //callback notifying us of the need to save config
-void saveConfigCallback ()
+void saveConfigCallback()
 {
-#ifdef LDEBUG
   Serial.println(F("Should save config"));
-#endif
   shouldSaveConfig = true;
+}
+
+bool loadFileFSConfigFile()
+{
+  //clean FS, for testing
+  //FileFS.format();
+
+  //read configuration from FS json
+  Serial.println(F("Mounting FS..."));
+
+  if (FileFS.begin())
+  {
+    Serial.println(F("Mounted file system"));
+
+    if (FileFS.exists(configFileName))
+    {
+      //file exists, reading and loading
+      Serial.println(F("Reading config file"));
+      File configFile = FileFS.open(configFileName, "r");
+
+      if (configFile)
+      {
+        Serial.print(F("Opened config file, size = "));
+        size_t configFileSize = configFile.size();
+        Serial.println(configFileSize);
+
+        // Allocate a buffer to store contents of the file.
+        std::unique_ptr<char[]> buf(new char[configFileSize + 1]);
+
+        configFile.readBytes(buf.get(), configFileSize);
+
+        Serial.print(F("\nJSON parseObject() result : "));
+
+#if (ARDUINOJSON_VERSION_MAJOR >= 6)
+        DynamicJsonDocument json(1024);
+        auto deserializeError = deserializeJson(json, buf.get(), configFileSize);
+
+        if ( deserializeError )
+        {
+          Serial.println(F("failed"));
+          return false;
+        }
+        else
+        {
+          Serial.println(F("OK"));
+
+          if (json["blynk_server"])
+            strncpy(blynk_server, json["blynk_server"], sizeof(blynk_server));
+         
+          if (json["blynk_port"])
+            strncpy(blynk_port, json["blynk_port"], sizeof(blynk_port));
+ 
+          if (json["blynk_token"])
+            strncpy(blynk_token,  json["blynk_token"], sizeof(blynk_token));
+
+          if (json["mqtt_server"])
+            strncpy(mqtt_server, json["mqtt_server"], sizeof(mqtt_server));
+
+          if (json["mqtt_port"])  
+            strncpy(mqtt_port,   json["mqtt_port"], sizeof(mqtt_port));
+        }
+
+        //serializeJson(json, Serial);
+        serializeJsonPretty(json, Serial);
+#else
+        DynamicJsonBuffer jsonBuffer;
+        // Parse JSON string
+        JsonObject& json = jsonBuffer.parseObject(buf.get());
+        // Test if parsing succeeds.
+
+        if (json.success())
+        {
+          Serial.println("OK");
+
+          if (json["blynk_server"])
+            strncpy(blynk_server, json["blynk_server"], sizeof(blynk_server));
+         
+          if (json["blynk_port"])
+            strncpy(blynk_port, json["blynk_port"], sizeof(blynk_port));
+ 
+          if (json["blynk_token"])
+            strncpy(blynk_token,  json["blynk_token"], sizeof(blynk_token));
+
+          if (json["mqtt_server"])
+            strncpy(mqtt_server, json["mqtt_server"], sizeof(mqtt_server));
+
+          if (json["mqtt_port"])  
+            strncpy(mqtt_port,   json["mqtt_port"], sizeof(mqtt_port));
+        }
+        else
+        {
+          Serial.println(F("failed"));
+          return false;
+        }
+        //json.printTo(Serial);
+        json.prettyPrintTo(Serial);
+#endif
+
+        configFile.close();
+      }
+    }
+  }
+  else
+  {
+    Serial.println(F("failed to mount FS"));
+    return false;
+  }
+  return true;
+}
+
+bool saveFileFSConfigFile()
+{
+  Serial.println(F("Saving config"));
+
+#if (ARDUINOJSON_VERSION_MAJOR >= 6)
+  DynamicJsonDocument json(1024);
+#else
+  DynamicJsonBuffer jsonBuffer;
+  JsonObject& json = jsonBuffer.createObject();
+#endif
+
+  json["blynk_server"] = blynk_server;
+  json["blynk_port"]   = blynk_port;
+  json["blynk_token"]  = blynk_token;
+
+  json["mqtt_server"] = mqtt_server;
+  json["mqtt_port"]   = mqtt_port;
+
+  File configFile = FileFS.open(configFileName, "w");
+
+  if (!configFile)
+  {
+    Serial.println(F("Failed to open config file for writing"));
+
+    return false;
+  }
+
+#if (ARDUINOJSON_VERSION_MAJOR >= 6)
+  //serializeJson(json, Serial);
+  serializeJsonPretty(json, Serial);
+  // Write data to file and close it
+  serializeJson(json, configFile);
+#else
+  //json.printTo(Serial);
+  json.prettyPrintTo(Serial);
+  // Write data to file and close it
+  json.printTo(configFile);
+#endif
+
+  configFile.close();
+  //end save
+
+  return true;
+}
+
+void toggleLED()
+{
+  //toggle state
+  digitalWrite(PIN_LED, !digitalRead(PIN_LED));
 }
 
 void heartBeatPrint()
 {
   static int num = 1;
 
-#ifdef LDEBUG
   if (WiFi.status() == WL_CONNECTED)
     Serial.print(F("H"));        // H means connected to WiFi
   else
     Serial.print(F("F"));        // F means not connected to WiFi
-#endif
 
   if (num == 80)
   {
-#ifdef LDEBUG
     Serial.println();
-#endif
     num = 1;
   }
   else if (num++ % 10 == 0)
   {
-#ifdef LDEBUG
     Serial.print(F(" "));
-#endif
   }
-}
-
-void toggleLED()
-{
-  //toggle state
-  digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
 }
 
 void check_WiFi()
 {
   if ( (WiFi.status() != WL_CONNECTED) )
   {
-#ifdef LDEBUG
     Serial.println(F("\nWiFi lost. Call connectMultiWiFi in loop"));
-#endif
     connectMultiWiFi();
   }
 }  
-
-bool shouldReboot = false;
-bool shouldSettingsReset = false;
-
-DynamicJsonDocument espstatus(1024);
-
 
 void check_status()
 {
   static ulong checkstatus_timeout  = 0;
   static ulong LEDstatus_timeout    = 0;
   static ulong checkwifi_timeout    = 0;
-  
-  static ulong currentMillis;
 
-#define HEARTBEAT_INTERVAL    10000L
-#define LED_INTERVAL          2000L
+  static ulong current_millis;
+
 #define WIFICHECK_INTERVAL    1000L
+#define LED_INTERVAL          2000L
+#define HEARTBEAT_INTERVAL    10000L
 
-  currentMillis = millis();
-
+  current_millis = millis();
+  
   // Check WiFi every WIFICHECK_INTERVAL (1) seconds.
-  if ((currentMillis > checkwifi_timeout) || (checkwifi_timeout == 0))
+  if ((current_millis > checkwifi_timeout) || (checkwifi_timeout == 0))
   {
     check_WiFi();
-    checkwifi_timeout = currentMillis + WIFICHECK_INTERVAL;
+    checkwifi_timeout = current_millis + WIFICHECK_INTERVAL;
   }
 
-  if ((currentMillis > LEDstatus_timeout) || (LEDstatus_timeout == 0))
+  if ((current_millis > LEDstatus_timeout) || (LEDstatus_timeout == 0))
   {
     // Toggle LED at LED_INTERVAL = 2s
     toggleLED();
-    LEDstatus_timeout = currentMillis + LED_INTERVAL;
-
-    espstatus["Heap"] = ESP.getFreeHeap();
-    espstatus["Frag"] = ESP.getHeapFragmentation();
-    espstatus["FBSize"] = ESP.getMaxFreeBlockSize();
-    espstatus["CPU"] = ESP.getCpuFreqMHz();
-
-    if(shouldReboot || shouldSettingsReset)
-    {
-        if(shouldSettingsReset)
-        {
-            
-            ESPAsync_WiFiManager ESPAsync_wifiManager(&webServer, &dnsServer, "ConfigOnSwitch");
-#ifdef LDEBUG
-            Serial.println(F("ESP rest!"));
-#endif
-            ESPAsync_wifiManager.resetSettings();
-            WiFi.disconnect();
-            delay(1000);
-#ifdef LDEBUG
-            Serial.println(F("ESP restarting..."));
-#endif
-        }
-#ifdef LDEBUG
-        Serial.println(F("I do reset.."));
-#endif
-        ESP.reset();
-    }
+    LEDstatus_timeout = current_millis + LED_INTERVAL;
   }
 
   // Print hearbeat every HEARTBEAT_INTERVAL (10) seconds.
-  if ((currentMillis > checkstatus_timeout) || (checkstatus_timeout == 0))
+  if ((current_millis > checkstatus_timeout) || (checkstatus_timeout == 0))
   {
     heartBeatPrint();
-    checkstatus_timeout = currentMillis + HEARTBEAT_INTERVAL;
+    checkstatus_timeout = current_millis + HEARTBEAT_INTERVAL;
   }
 }
 
-void loadConfigData()
+bool loadConfigData()
 {
   File file = FileFS.open(CONFIG_FILENAME, "r");
   LOGERROR(F("LoadWiFiCfgFile "));
@@ -550,10 +652,14 @@ void loadConfigData()
     // New in v1.4.0
     displayIPConfigStruct(WM_STA_IPconfig);
     //////
+
+    return true;
   }
   else
   {
     LOGERROR(F("failed"));
+
+    return false;
   }
 }
     
@@ -565,6 +671,8 @@ void saveConfigData()
   if (file)
   {
     file.write((uint8_t*) &WM_config,   sizeof(WM_config));
+
+    displayIPConfigStruct(WM_STA_IPconfig);
 
     // New in v1.4.0
     file.write((uint8_t*) &WM_STA_IPconfig, sizeof(WM_STA_IPconfig));
@@ -579,158 +687,53 @@ void saveConfigData()
   }
 }
 
-//******************************************************************************************* Custom stuff ********************************************************************************
-    
-#include "RelayBoard.h"
-#include "Boards.h"
-
-#include "helper.h"
-#include "webhelper.h"
-#include <memory>
-
-Boards relayArray = Boards();
-
-#include "CustomSetHandler.h"
-#include "CustomGetHandler.h"
-#include "Custom_setHandler.h"
-#include "CustomDefaultHandler.h"
-#include "CustomLockHandler.h"
-#include "CustomUnlockHandler.h"
-#include "CustomFaviHandler.h"
-#include "CustomResetHandler.h"
-#include "CustomSettingsResetHandler.h"
-#include "CustomStatusHandler.h"
-
-//*****************************************************************************************************************************************************************************************
 void setup()
 {
-  //set led pin as output
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, LED_ON);
-
-#ifdef WITHRESET
-  pinMode(D0, INPUT_PULLUP);
-#endif
-
-  // Put your setup code here, to run once
+  // put your setup code here, to run once:
   Serial.begin(115200);
   while (!Serial);
 
-#ifdef LDEBUG
-  Serial.print("\nStarting Async_AutoConnectWithFSParametersAndCustomIP using " + String(FS_Name));
-  Serial.println(" on " + String(ARDUINO_BOARD));
+  delay(200);
+
+  Serial.print(F("\nStarting Async_AutoConnectWithFSParams using ")); Serial.print(FS_Name);
+  Serial.print(F(" on ")); Serial.println(ARDUINO_BOARD);
   Serial.println(ESP_ASYNC_WIFIMANAGER_VERSION);
-#endif
 
-  //clean FS, for testing
-  //FileFS.format();
-
-  // Mount the filesystem
-  bool result = FileFS.begin();
-
-#ifdef LDEBUG
-    #if USE_LITTLEFS
-    Serial.print(F("\nLittleFS opened: "));
-    #else
-    Serial.print("\nSPIFFS opened: ");
-    #endif
-
-      Serial.println(result ? "OK" : "Failed");
-
-  //read configuration from FS json
-    Serial.println(F("Mounting FS..."));
-#endif
-
-  if (result) 
+  if ( String(ESP_ASYNC_WIFIMANAGER_VERSION) < ESP_ASYNC_WIFIMANAGER_VERSION_MIN_TARGET )
   {
-#ifdef LDEBUG
-    Serial.println(F("Mounted file system"));
-#endif
-    
-    if (FileFS.exists(CONFIG_FILE)) 
-    {
-      //file exists, reading and loading
-#ifdef LDEBUG
-      Serial.println(F("Reading config file"));
-#endif
-      
-      File configFile = FileFS.open(CONFIG_FILE, "r");
-      
-      if (configFile) 
-      {
-#ifdef LDEBUG
-        Serial.println(F("Opened config file"));
-#endif
-        
-        size_t size = configFile.size();
-        
-        // Allocate a buffer to store contents of the file.
-        std::unique_ptr<char[]> buf(new char[size]);
+    Serial.print("Warning. Must use this example on Version later than : ");
+    Serial.println(ESP_ASYNC_WIFIMANAGER_VERSION_MIN_TARGET);
+  }
 
-        configFile.readBytes(buf.get(), size);
+  if (FORMAT_FILESYSTEM) 
+    FileFS.format();
 
-#if (ARDUINOJSON_VERSION_MAJOR >= 6)
-
-        DynamicJsonDocument json(1024);
-        auto deserializeError = deserializeJson(json, buf.get());
-
-        serializeJson(json, Serial);
-        
-        if ( !deserializeError )    
+  // Format FileFS if not yet
+#ifdef ESP32
+  if (!FileFS.begin(true))
 #else
-        DynamicJsonBuffer jsonBuffer;
-        
-        // Parse JSON string
-        JsonObject& json = jsonBuffer.parseObject(buf.get());
-        
-        json.printTo(Serial);
-
-        // Test if parsing succeeds.
-        if (json.success()) 
-#endif        
-        {
-#ifdef LDEBUG
-          Serial.println(F("\nParsed json"));
-#endif
-
-          strcpy(switch_url, json["switch_url"]);
-          strcpy(custom_js, json["custom_js"]);
-          strcpy(custom_cu, json["custom_cu"]);
-          strcpy(numberOfBoards,   json["numberOfBoards"]);
-        }  
-        else 
-        {
-#ifdef LDEBUG
-          Serial.println(F("Failed to load json config"));
-#endif
-        }
-      }
-    }
-  } 
-  else 
+  if (!FileFS.begin())
+#endif  
   {
-#ifdef LDEBUG
-    Serial.println(F("Failed to mount FS"));
+    Serial.print(FS_Name);
+    Serial.println(F(" failed! AutoFormatting."));
+    
+#ifdef ESP8266
+    FileFS.format();
 #endif
   }
-  
-  //end read
-#ifdef LDEBUG
-  Serial.println(String("Switch_url = ") + switch_url);
-  Serial.println(String("NumberOfBoards   = ") + numberOfBoards);
-  Serial.println(String("Custom_js = ") + custom_js);
-  Serial.println(String("Custom_cu = ") + custom_cu);
-#endif
-  
+
+  loadFileFSConfigFile();
+
   // The extra parameters to be configured (can be either global or just in the setup)
   // After connecting, parameter.getValue() will get you the configured value
   // id/name placeholder/prompt default length
+  ESPAsync_WMParameter custom_blynk_server("blynk_server", "blynk_server", blynk_server, BLYNK_SERVER_LEN + 1);
+  ESPAsync_WMParameter custom_blynk_port  ("blynk_port",   "blynk_port",   blynk_port,   BLYNK_SERVER_PORT_LEN + 1);
+  ESPAsync_WMParameter custom_blynk_token ("blynk_token",  "blynk_token",  blynk_token,  BLYNK_TOKEN_LEN + 1 );
 
-  //TODO change length!!!
-  ESPAsync_WMParameter custom_switch_url ("switch_url",  "switch_url",  switch_url,  40);
-  ESPAsync_WMParameter custom_numberOfBoards   ("numberOfBoards",    "numberOfBoards",    numberOfBoards,    2);
-  ESPAsync_WMParameter custom_custom_js   ("custom_js",    "custom_js",    custom_js,    40);
-  ESPAsync_WMParameter custom_custom_cu ("custom_cu",   "custom_cu",  custom_cu,  40);
+  ESPAsync_WMParameter custom_mqtt_server("mqtt_server", "mqtt_server", mqtt_server, MQTT_SERVER_MAX_LEN + 1);
+  ESPAsync_WMParameter custom_mqtt_port  ("mqtt_port",   "mqtt_port",   mqtt_port,   MQTT_SERVER_PORT_LEN + 1);
 
   unsigned long startedAt = millis();
 
@@ -739,21 +742,30 @@ void setup()
   initSTAIPConfigStruct(WM_STA_IPconfig);
   //////
 
-  //WiFiManager
   //Local intialization. Once its business is done, there is no need to keep it around
-  //ESPAsync_WiFiManager ESPAsync_wifiManager(&&webServer, &dnsServer,);
-  //Here starts the WiFi Manager initialization
-  //Local intialization. Once its business is done, there is no need to keep it around
+  // Use this to default DHCP hostname to ESP8266-XXXXXX or ESP32-XXXXXX
+  //ESPAsync_WiFiManager ESPAsync_wifiManager(&webServer, &dnsServer);
+  // Use this to personalize DHCP hostname (RFC952 conformed)
+  AsyncWebServer webServer(HTTP_PORT);
+
+#if ( ARDUINO_ESP32S2_DEV || ARDUINO_FEATHERS2 || ARDUINO_PROS2 || ARDUINO_MICROS2 )   
+  ESPAsync_WiFiManager ESPAsync_wifiManager(&webServer, NULL, "AutoConnect-FSParams");
+#else
+  DNSServer dnsServer;
+  
   ESPAsync_WiFiManager ESPAsync_wifiManager(&webServer, &dnsServer, "AutoConnect-FSParams");
+#endif
 
   //set config save notify callback
   ESPAsync_wifiManager.setSaveConfigCallback(saveConfigCallback);
 
   //add all your parameters here
-  ESPAsync_wifiManager.addParameter(&custom_switch_url);
-  ESPAsync_wifiManager.addParameter(&custom_numberOfBoards);
-  ESPAsync_wifiManager.addParameter(&custom_custom_js);
-  ESPAsync_wifiManager.addParameter(&custom_custom_cu);
+  ESPAsync_wifiManager.addParameter(&custom_blynk_server);
+  ESPAsync_wifiManager.addParameter(&custom_blynk_port);
+  ESPAsync_wifiManager.addParameter(&custom_blynk_token);
+
+  ESPAsync_wifiManager.addParameter(&custom_mqtt_server);
+  ESPAsync_wifiManager.addParameter(&custom_mqtt_port);
 
   //reset settings - for testing
   //ESPAsync_wifiManager.resetSettings();
@@ -794,22 +806,31 @@ void setup()
   Router_Pass = ESPAsync_wifiManager.WiFi_Pass();
 
   //Remove this line if you do not want to see WiFi password printed
-#ifdef LDEBUG
-  Serial.println("\nStored: SSID = " + Router_SSID + ", Pass = " + Router_Pass);
-#endif
+  Serial.println("ESP Self-Stored: SSID = " + Router_SSID + ", Pass = " + Router_Pass);
 
-  if (Router_SSID != "")
+  bool configDataLoaded = false;
+
+  // From v1.1.0, Don't permit NULL password
+  if ( (Router_SSID != "") && (Router_Pass != "") )
   {
+    LOGERROR3(F("* Add SSID = "), Router_SSID, F(", PW = "), Router_Pass);
+    wifiMulti.addAP(Router_SSID.c_str(), Router_Pass.c_str());
+    
     ESPAsync_wifiManager.setConfigPortalTimeout(120); //If no access point name has been previously entered disable timeout.
-#ifdef LDEBUG
-    Serial.println(F("Got stored Credentials. Timeout 120s"));
-#endif
+    Serial.println(F("Got ESP Self-Stored Credentials. Timeout 120s for Config Portal"));
+  }
+  else if (loadConfigData())
+  {
+    configDataLoaded = true;
+    
+    ESPAsync_wifiManager.setConfigPortalTimeout(120); //If no access point name has been previously entered disable timeout.
+    Serial.println(F("Got stored Credentials. Timeout 120s for Config Portal")); 
   }
   else
   {
-#ifdef LDEBUG
-    Serial.println(F("No stored Credentials. No timeout"));
-#endif
+    // Enter CP only if no stored SSID on flash and file 
+    Serial.println(F("Open Config Portal without Timeout: No stored Credentials."));
+    initialConfig = true;
   }
 
   String chipID = String(ESP_getChipId(), HEX);
@@ -819,27 +840,16 @@ void setup()
   AP_SSID = "ESP_" + chipID + "_AutoConnectAP";
   AP_PASS = "MyESP_" + chipID;
 
-  // From v1.1.0, Don't permit NULL password
-  if ( (Router_SSID == "") || (Router_Pass == "") )
+  if (initialConfig)
   {
-#ifdef LDEBUG
     Serial.println(F("We haven't got any access point credentials, so get them now"));
-#endif
-
-    initialConfig = false;
 
     // Starts an access point
     //if (!ESPAsync_wifiManager.startConfigPortal((const char *) ssid.c_str(), password))
-    if ( !ESPAsync_wifiManager.startConfigPortal(AP_SSID.c_str(), AP_PASS.c_str()) ) {
-#ifdef LDEBUG
+    if ( !ESPAsync_wifiManager.startConfigPortal(AP_SSID.c_str(), AP_PASS.c_str()) )
       Serial.println(F("Not connected to WiFi but continuing anyway."));
-#endif
-    }
-    else {
-#ifdef LDEBUG
+    else
       Serial.println(F("WiFi connected...yeey :)"));
-#endif
-    }
 
     // Stored  for later usage, from v1.1.0, but clear first
     memset(&WM_config, 0, sizeof(WM_config));
@@ -869,7 +879,6 @@ void setup()
 
     // New in v1.4.0
     ESPAsync_wifiManager.getSTAStaticIPConfig(WM_STA_IPconfig);
-    displayIPConfigStruct(WM_STA_IPconfig);
     //////
     
     saveConfigData();
@@ -884,7 +893,8 @@ void setup()
   if (!initialConfig)
   {
     // Load stored data, the addAP ready for MultiWiFi reconnection
-    loadConfigData();
+    if (!configDataLoaded)
+      loadConfigData();
 
     for (uint8_t i = 0; i < NUM_WIFI_CREDENTIALS; i++)
     {
@@ -898,169 +908,40 @@ void setup()
 
     if ( WiFi.status() != WL_CONNECTED ) 
     {
-#ifdef LDEBUG
       Serial.println(F("ConnectMultiWiFi in setup"));
-#endif
+     
       connectMultiWiFi();
     }
   }
 
-#ifdef LDEBUG
   Serial.print(F("After waiting "));
   Serial.print((float) (millis() - startedAt) / 1000L);
   Serial.print(F(" secs more in setup(), connection result is "));
-#endif
 
   if (WiFi.status() == WL_CONNECTED)
   {
-#ifdef LDEBUG
     Serial.print(F("connected. Local IP: "));
     Serial.println(WiFi.localIP());
-#endif
   }
   else
-  {
-    auto r = ESPAsync_wifiManager.getStatus(WiFi.status());
-#ifdef LDEBUG
-    Serial.println(r);
-#endif
-  }
+    Serial.println(ESPAsync_wifiManager.getStatus(WiFi.status()));
 
   //read updated parameters
-  strcpy(switch_url, custom_switch_url.getValue());
-  strcpy(numberOfBoards, custom_numberOfBoards.getValue());
-  strcpy(custom_js, custom_custom_js.getValue());
-  strcpy(custom_cu, custom_custom_cu.getValue());
+  strncpy(blynk_server, custom_blynk_server.getValue(), sizeof(blynk_server));
+  strncpy(blynk_port,   custom_blynk_port.getValue(),   sizeof(blynk_port));
+  strncpy(blynk_token,  custom_blynk_token.getValue(),  sizeof(blynk_token));
+
+  strncpy(mqtt_server, custom_mqtt_server.getValue(), sizeof(mqtt_server));
+  strncpy(mqtt_port, custom_mqtt_port.getValue(),     sizeof(mqtt_port));
 
   //save the custom parameters to FS
-  if (shouldSaveConfig) 
+  if (shouldSaveConfig)
   {
-#ifdef LDEBUG
-    Serial.println(F("Saving config"));
-#endif
-
-#if (ARDUINOJSON_VERSION_MAJOR >= 6)
-    DynamicJsonDocument json(1024);
-#else
-    DynamicJsonBuffer jsonBuffer;
-    JsonObject& json = jsonBuffer.createObject();
-#endif
-    
-    if(switch_url[0] == '0')
-    {
-#ifdef LDEBUG
-        Serial.println(F("Corrected url while reconecting.."));
-#endif
-        WiFi.localIP().toString().toCharArray(switch_url, 40);
-        delay(20);
-    }
-
-    json["numberOfBoards"]   = numberOfBoards;
-    json["switch_url"] = switch_url;
-    json["custom_js"] = custom_js;
-    json["custom_cu"] = custom_cu;
-
-    File configFile     = FileFS.open(CONFIG_FILE, "w");
-    
-    if (!configFile) 
-    {
-#ifdef LDEBUG
-      Serial.println(F("Failed to open config file for writing"));
-#endif
-    }
-
-#if (ARDUINOJSON_VERSION_MAJOR >= 6)
-    serializeJsonPretty(json, Serial);
-    // Write data to file and close it
-    serializeJson(json, configFile);
-#else
-    json.prettyPrintTo(Serial);
-    // Write data to file and close it
-    json.printTo(configFile);
-#endif
-    
-    configFile.close();
-    //end save
+    saveFileFSConfigFile();
   }
 
-#ifdef LDEBUG
-  Serial.print(F("Local IP = "));
+  Serial.print("Local IP = ");
   Serial.println(WiFi.localIP());
-  Serial.print(F("GateWay IP = "));
-  Serial.println(WiFi.gatewayIP());
-  Serial.print(F("SubnetMask = ")); 
-  Serial.println(WiFi.subnetMask());
-
-  if (WiFi.status() != WL_CONNECTED)
-  {
-    Serial.print(F("NOT CONNECTED  NOT CONNECT"));
-  }
-  else
-  {
-    Serial.print(F("I AM CONNECTED"));
-  }
-#endif
-  
-
-
-  //keep LED off
-  digitalWrite(LED_BUILTIN, LED_OFF);
-
-#ifdef WITHRESET
-    byte counter = 0;
-
-    while(counter < 5)
-    {
-        byte buttonVal = digitalRead(D0);
-        
-        if (buttonVal == LOW) {
-            
-    #ifdef LDEBUG
-            Serial.println(F("ESP rest!"));
-    #endif
-            ESPAsync_wifiManager.resetSettings();
-            WiFi.disconnect();
-            delay(1000);
-    #ifdef LDEBUG
-            Serial.println(F("ESP restarting..."));
-    #endif
-            delay(1000);
-            ESP.restart();
-        }
-        else
-        {
-    #ifdef LDEBUG
-        Serial.println(F("NotPushed!"));
-    #endif
-        }
-        
-        delay(200);
-        counter++;
-    }
-#endif
-
-byte numberOfRelayBoards = String(numberOfBoards).toInt();
-relayArray.Init(numberOfRelayBoards);
-
-auto helper = std::make_shared<Helper>(numberOfRelayBoards, relayArray);
-auto webhelper = std::make_shared<WebHelper>(numberOfRelayBoards, relayArray, String(custom_cu), String(custom_js),  String(switch_url), myPort, &espstatus);
-
-webServer.addHandler(new CustomDefaultHandler(webhelper));
-webServer.addHandler(new CustomSetHandler(webhelper, helper));
-webServer.addHandler(new Custom_setHandler(webhelper));
-webServer.addHandler(new CustomGetHandler(webhelper));
-webServer.addHandler(new CustomLockHandler(webhelper));
-webServer.addHandler(new CustomUnlockHandler(webhelper));
-webServer.addHandler(new CustomResetHandler(webhelper, &shouldReboot));
-webServer.addHandler(new CustomSettingsResetHandler(webhelper, &shouldSettingsReset));
-webServer.addHandler(new CustomFaviHandler(webhelper));
-webServer.addHandler(new CustomStatusHandler(webhelper));
-
-#ifdef LDEBUG
-    Serial.println(F("Starting"));
-#endif
-webServer.begin();
-
 }
 
 void loop()
